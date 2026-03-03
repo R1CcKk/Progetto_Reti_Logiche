@@ -67,7 +67,6 @@ type state_type is (RESET, INIT_MEM, IDLE, FETCH_SIZE, DECODE, OP00_CHECK_EMPTY,
     signal data_buffer : std_logic_vector(7 downto 0);
     signal concatenation : std_logic_vector(7 downto 0);
     
-    -- (altri segnali utili per l'elaborazione)
 
 begin
 
