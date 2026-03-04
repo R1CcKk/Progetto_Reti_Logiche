@@ -139,6 +139,9 @@ begin
                 next_state <= S_WAIT_FETCH;
 
             when S_WAIT_FETCH =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '0';
+                o_mem_addr <= (others => '0');
                 -- mem_latch si aggiorna via default (next_mem_latch <= i_mem_data)
                 next_state <= S_DECODE;
 
@@ -323,7 +326,7 @@ begin
                 o_mem_we   <= '1';
                 o_mem_addr <= std_logic_vector(current_addr + 1);
                 o_mem_data <= mem_latch;
-                if current_addr > target_addr then
+                if current_addr >= target_addr then
                     next_current_addr <= current_addr - 1;
                     next_state        <= S_OP10_SHIFT_READ;
                 else
