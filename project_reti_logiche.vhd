@@ -26,7 +26,7 @@ architecture Behavioral of project_reti_logiche is
         S_RESET, S_INIT_MEM, S_IDLE,
         S_FETCH_SIZE, S_WAIT_FETCH, S_DECODE,
         -- OP00
-        S_OP00_READ, S_OP00_WAIT, S_OP00_MODIFY,
+        S_OP00_READ, S_OP00_WAIT, S_OP00_MODIFY, S_OP00_CHECK_EMPTY,
         -- OP01
         S_OP01_CHECK_EMPTY, S_OP01_FORCE_ZERO,
         S_OP01_READ_FIRST, S_OP01_WAIT_FIRST, S_OP01_SAVE,
@@ -161,16 +161,16 @@ begin
             -- -----------------------------------------------
             -- OP00: incrementa valore priorità (satura a 3)
             -- -----------------------------------------------
-            when OP00_CHECK_EMPTY =>
+            when S_OP00_CHECK_EMPTY =>
 
                 next_extracted_id <= (others => '0');
                 next_target_addr  <= (others => '0');
 
                 if num_tasks = "00000000" then
                     next_current_addr <= to_unsigned(1, 16);
-                    next_state <= DONE;
+                    next_state <= S_DONE;
                 else
-                    next_state <= OP00_READ;
+                    next_state <= S_OP00_READ;
                 end if;
 
                     
