@@ -97,7 +97,7 @@ begin
     -- 3. PROCESSO: LOGICA DELLA FSM (COMBINATORIO)
     -- Utilità: Decide QUALI sono i passi da compiere. Non fa calcoli, decide solo il flusso.
     -- La sensibilità include tutti i segnali che influenzano le decisioni.
-    fsm_logic: process(current_state, i_start, i_op, num_tasks)
+    fsm_logic: process(current_state, i_start, i_op, num_tasks, i_mem_data, current_addr, i_task_id)
     begin
         -- Valore di default: resta nello stato attuale se non diversamente specificato
         next_state <= current_state;
@@ -116,7 +116,7 @@ begin
             when INIT_MEM =>
                 o_done <= '1';
                 o_mem_en <= '1';
-                o_mem_we <= '1'; -- Scrive 0 all'indirizzo 0 per resettare la lista
+                o_mem_we <= '1'; -- Scrivo 0 all'indirizzo 0 per resettare la lista
                 next_state <= IDLE;
 
             when IDLE =>
@@ -126,11 +126,10 @@ begin
                 end if;
 
             when FETCH_SIZE =>
-                o_mem_en <= '1'; -- Attiva lettura della dimensione della lista (addr 0)
+                o_mem_en <= '1'; -- Attivo lettura della dimensione della lista (addr 0)
                 next_state <= DECODE;
 
             when DECODE =>
-                -- Bivio principale: smista l'esecuzione in base all'operazione richiesta
                 if i_op = "00" then
                     next_state <= OP00_CHECK_EMPTY;
                 elsif i_op = "01" then
@@ -148,6 +147,82 @@ begin
                 o_mem_we <= '1'; -- Scrittura forzata di 0 per svuotare la lista
                 next_state <= DONE;
 
+            when OP01_CHECK_EMPTY =>
+                if num_tasks = 00000000 then
+                    next_state <= OP01_FORCE_ZERO;
+                else
+                    next_state <= OP01_READ_FIRST;
+                end if;
+            
+            when OP01_FORCE_ZERO =>
+            --non serve operare con la memoria, è gia ok di default -> modifico o_task_id nel dp
+                next_state <= DONE;
+
+            when OP01_READ_FIRST =>
+                o_mem_we <= '0';
+                o_mem_en <= '1';
+                
+                next_state <= OP01_SAVE;
+                
+            when OP01_SAVE =>
+                if num_tasks = 00000001 then
+                    next_state <= OP01_UPDATE;
+                else
+                    next_state <= OP01_SHIFT_READ;
+                end if;
+
+            when OP01_SHIFT_READ =>
+                o_mem_we <= '0';
+                o_mem_en <= '1';
+                
+                next_state <= OP01_SHIFT_WRITE;
+
+            when OP01_SHIFT_WRITE =>
+                o_mem_we <= '1';
+                o_mem_en <= '1';
+                
+                if current_addr < resize(num_tasks, 16) then  --num_tasks è a 8 bit, fortemente tipizzato devo renderlo lungo 16 bit per poter fare il confronto
+                    next_state <= OP01_SHIFT_READ;
+                else
+                    next_state <= OP01_UPDATE;
+                end if;
+                
+
+            when OP01_UPDATE =>
+                o_mem_we <= '1';
+                o_mem_en <= '1';
+                
+                next_state <= DONE;
+                
+            when OP00_CHECK_EMPTY =>
+                if num_tasks = 00000000 then
+                        next_state <= DONE;
+                    else
+                        next_state <= OP00_READ;
+                    end if;
+
+            when OP00_READ =>
+                o_mem_we <= '0';
+                o_mem_en <= '1';
+                
+                next_state <= OP00_MODIFY;
+
+            when OP00_MODIFY =>
+                if i_mem_data(7 downto 2) = i_task_id then
+                    o_mem_en <= '1';
+                    o_mem_we <= '1';
+                else
+                    o_mem_en <= '0';
+                    o_mem_we <= '0';
+                end if;
+                
+                if current_addr < resize(num_tasks, 16) then
+                    next_state <= OP00_READ;
+                else
+                    next_state <= DONE;
+                end if;
+
+        
             when DONE =>
                 o_done <= '1';
                 -- Protocollo Handshake: il modulo resta in DONE finché i_start è 1.
@@ -193,7 +268,58 @@ begin
             when OP11_CLEAR =>
                 o_mem_addr <= (others => '0');
                 o_mem_data <= (others => '0');
-                next_num_tasks <= (others => '0'); -- Azzera anche il registro interno
+                next_num_tasks <= (others => '0'); -- Azzera anche il registro     
+            
+            when OP01_FORCE_ZERO =>
+            --tip: per non scrivere ogni volta 000000 uso sintassi others => '0' 
+            --è come dire al compilatore "riempi con tanti zeri quanti sono i bit disponibili"
+                o_task_id <= (others => '0'); --quindi qui ad esempio forzo i 6 bit disponibili a 0
+
+            when OP01_READ_FIRST =>
+                o_mem_addr <= "0000000000000001";
+
+            when OP01_SAVE =>
+                next_extracted_id <= i_mem_data (7 downto 2); --id rimosso
+                next_current_addr <= to_unsigned(2, 16);    -- Parto a leggere dal SECONDO
+
+
+            when OP01_SHIFT_READ =>
+                o_mem_addr <= std_logic_vector(current_addr);   --fortemente tipizzato quindi faccio cast per assegnamento
+                
+            when OP01_SHIFT_WRITE =>
+                o_mem_addr <= std_logic_vector(current_addr - 1);
+                o_mem_data <= i_mem_data;
+                next_current_addr <= current_addr + 1;
+
+            when OP01_UPDATE =>
+                o_mem_data <= std_logic_vector(num_tasks - 1);
+                o_mem_addr <= (others => '0');
+                next_num_tasks <= num_tasks - 1;
+            
+            when OP00_CHECK_EMPTY | OP01_CHECK_EMPTY | OP10_CHECK_EMPTY =>
+            next_extracted_id <= (others => '0'); --per svuotare i vecchi id
+            
+                if num_tasks /= 00000000 then
+                    next_current_addr <= to_unsigned(1, 16);
+                end if;
+            
+            when OP00_READ =>
+                o_mem_addr <= std_logic_vector(current_addr);
+                
+            when OP00_MODIFY =>
+            -- 1. Calcolo della nuova priorità (Saturazione a 3, ovvero "11")
+        -- Prendo i bit 1 e 0 di i_mem_data (la priorità attuale)
+                if i_mem_data(1 downto 0) = "11" then
+        -- Se è già al massimo, resta 3
+                    o_mem_data <= i_mem_data(7 downto 2) & "11";
+                else
+        -- Altrimenti aggiungo 1 (usando unsigned per il calcolo)
+                    o_mem_data <= i_mem_data(7 downto 2) & std_logic_vector(unsigned(i_mem_data(1 downto 0)) + 1);
+                end if;
+                
+                o_mem_addr <= std_logic_vector(current_addr);
+                next_extracted_id <= i_mem_data(7 downto 2);
+                next_current_addr <= current_addr + 1;            
 
             when others =>
                 -- In tutti gli altri stati (es. DONE o IDLE), il datapath non deve agire.
