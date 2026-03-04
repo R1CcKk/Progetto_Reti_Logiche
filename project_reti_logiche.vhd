@@ -30,11 +30,11 @@ end project_reti_logiche;
 architecture Behavioral of project_reti_logiche is
 
     -- DICHIARAZIONE DEGLI STATI
-    type state_type is (RESET, INIT_MEM, IDLE, FETCH_SIZE, DECODE, 
-                        OP00_CHECK_EMPTY, OP00_READ, OP00_MODIFY,
-                        OP01_CHECK_EMPTY, OP01_FORCE_ZERO, OP01_READ_FIRST, OP01_SAVE, OP01_SHIFT_READ, OP01_SHIFT_WRITE, OP01_UPDATE,
+    type state_type is (RESET, INIT_MEM, IDLE, FETCH_SIZE, WAIT_FETCH, DECODE, 
+                        OP00_CHECK_EMPTY, OP00_READ, OP00_WAIT, OP00_MODIFY,
+                        OP01_CHECK_EMPTY, OP01_FORCE_ZERO, OP01_READ_FIRST, OP01_WAIT_FIRST, OP01_SAVE, OP01_SHIFT_READ, OP01_WAIT_SHIFT, OP01_SHIFT_WRITE, OP01_UPDATE,
                         OP11_CLEAR,
-                        OP10_CHECK_EMPTY, OP10_FIND_READ, OP10_FIND_EVAL, OP10_CHECK_SHIFT, OP10_SHIFT_READ, OP10_SHIFT_WRITE, OP10_INSERT, OP10_UPDATE_SIZE,
+                        OP10_CHECK_EMPTY, OP10_FIND_READ,OP10_FIND_WAIT, OP10_FIND_EVAL, OP10_CHECK_SHIFT, OP10_SHIFT_READ, OP10_SHIFT_WAIT, OP10_SHIFT_WRITE, OP10_INSERT, OP10_UPDATE_SIZE,
                         DONE);
     
     signal current_state, next_state: state_type;
@@ -85,12 +85,22 @@ begin
     -- 3. PROCESSO: LOGICA DELLA FSM (COMBINATORIO)
     fsm_logic: process(current_state, i_start, i_op, num_tasks, i_mem_data, current_addr, target_addr, i_task_id, i_task_priority)
     begin
+        -- Valori di default per la FSM
         next_state <= current_state;
         
+        -- Valori di default per i registri del Datapath (FONDAMENTALE PER EVITARE LATCH!)
+        next_num_tasks    <= num_tasks;
+        next_current_addr <= current_addr;
+        next_target_addr  <= target_addr;
+        next_extracted_id <= extracted_id;
+        next_data_buffer  <= data_buffer;
+
+        -- Valori di default per le uscite di controllo
         o_mem_en <= '0';
         o_mem_we <= '0';
         o_done   <= '0';
-
+        
+        
         case current_state is
             when RESET =>
                 o_done     <= '1';
@@ -110,6 +120,10 @@ begin
 
             when FETCH_SIZE =>
                 o_mem_en   <= '1';
+                next_state <= WAIT_FETCH; --serve per aspettare la lettura della ram
+                
+            when WAIT_FETCH =>
+                -- In questo ciclo la memoria prepara i_mem_data
                 next_state <= DECODE;
 
             when DECODE =>
@@ -140,6 +154,9 @@ begin
             when OP01_READ_FIRST =>
                 o_mem_we   <= '0';
                 o_mem_en   <= '1';
+                next_state <= OP01_WAIT_FIRST;
+                
+            when OP01_WAIT_FIRST =>
                 next_state <= OP01_SAVE;
                 
             when OP01_SAVE =>
@@ -152,12 +169,15 @@ begin
             when OP01_SHIFT_READ =>
                 o_mem_we   <= '0';
                 o_mem_en   <= '1';
-                next_state <= OP01_SHIFT_WRITE;
+                next_state <= OP01_WAIT_SHIFT;
+                
+            when OP01_WAIT_SHIFT =>
+                next_state <= OP01_SHIFT_WRITE;    
 
             when OP01_SHIFT_WRITE =>
                 o_mem_we <= '1';
                 o_mem_en <= '1';
-                if current_addr <= resize(num_tasks, 16) then
+                if current_addr < resize(num_tasks, 16) then
                     next_state <= OP01_SHIFT_READ;
                 else
                     next_state <= OP01_UPDATE;
@@ -179,6 +199,9 @@ begin
             when OP00_READ =>
                 o_mem_we   <= '0';
                 o_mem_en   <= '1';
+                next_state <= OP00_WAIT;
+                
+            when OP00_WAIT =>
                 next_state <= OP00_MODIFY;
 
             when OP00_MODIFY =>
@@ -203,6 +226,9 @@ begin
                 
                 o_mem_en   <= '1';
                 o_mem_we   <= '0';
+                next_state <= OP10_FIND_WAIT;
+                
+            when OP10_FIND_WAIT =>
                 next_state <= OP10_FIND_EVAL;
             
             when OP10_FIND_EVAL =>
@@ -231,12 +257,15 @@ begin
             when OP10_SHIFT_READ =>
                 o_mem_en   <= '1';
                 o_mem_we   <= '0';
+                next_state <= OP10_SHIFT_WAIT;
+                
+            when OP10_SHIFT_WAIT =>
                 next_state <= OP10_SHIFT_WRITE;
             
             when OP10_SHIFT_WRITE =>
                 o_mem_en <= '1';
                 o_mem_we <= '1';
-                if current_addr >= target_addr then
+                if current_addr > target_addr then
                     next_state <= OP10_SHIFT_READ;
                 else
                     next_state <= OP10_INSERT;
@@ -281,7 +310,7 @@ begin
                 o_mem_addr <= (others => '0');
                 o_mem_data <= (others => '0');
 
-            when FETCH_SIZE =>
+            when FETCH_SIZE | WAIT_FETCH=>
                 o_mem_addr <= (others => '0');
 
             when DECODE =>
@@ -317,28 +346,28 @@ begin
             when OP01_FORCE_ZERO =>
                 next_extracted_id <= (others => '0');
 
-            when OP01_READ_FIRST =>
+            when OP01_READ_FIRST | OP01_WAIT_FIRST=>
                 o_mem_addr <= "0000000000000001";
 
             when OP01_SAVE =>
                 next_extracted_id <= i_mem_data(7 downto 2);
                 next_current_addr <= to_unsigned(2, 16);
 
-            when OP01_SHIFT_READ =>
+            when OP01_SHIFT_READ | OP01_WAIT_SHIFT =>
                 o_mem_addr <= std_logic_vector(current_addr);
                 
             when OP01_SHIFT_WRITE =>
-                o_mem_addr        <= std_logic_vector(current_addr - 1);
-                o_mem_data        <= i_mem_data;
+                o_mem_addr <= std_logic_vector(current_addr - 1);
+                o_mem_data <= i_mem_data;
                 next_current_addr <= current_addr + 1;
 
             when OP01_UPDATE =>
-                o_mem_data     <= std_logic_vector(num_tasks - 1);
-                o_mem_addr     <= (others => '0');
+                o_mem_data <= std_logic_vector(num_tasks - 1);
+                o_mem_addr <= (others => '0');
                 next_num_tasks <= num_tasks - 1;
 
 -- OP00
-            when OP00_READ =>
+            when OP00_READ | OP00_WAIT =>
                 o_mem_addr <= std_logic_vector(current_addr);
                 
             when OP00_MODIFY =>
@@ -354,7 +383,7 @@ begin
 -- OP10
             
 
-            when OP10_FIND_READ =>
+            when OP10_FIND_READ | OP10_FIND_WAIT =>
                 
                 o_mem_addr <= std_logic_vector(current_addr);
 
@@ -377,13 +406,13 @@ begin
                     next_current_addr <= resize(num_tasks, 16);
                 end if;
                 
-            when OP10_SHIFT_READ =>
+            when OP10_SHIFT_READ | OP10_SHIFT_WAIT=>
                 o_mem_addr <= std_logic_vector(current_addr);
             
             when OP10_SHIFT_WRITE =>
                 o_mem_addr <= std_logic_vector(current_addr + 1);
                 o_mem_data <= i_mem_data;
-                if current_addr >= target_addr then
+                if current_addr > target_addr then
                     next_current_addr <= current_addr - 1;
                 end if;
                 
