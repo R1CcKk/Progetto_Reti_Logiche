@@ -268,7 +268,7 @@ begin
             when OP01_FORCE_ZERO =>
             --tip: per non scrivere ogni volta 000000 uso sintassi others => '0' 
             --è come dire al compilatore "riempi con tanti zeri quanti sono i bit disponibili"
-                o_task_id <= (others => '0'); --quindi qui ad esempio forzo i 6 bit disponibili a 0
+                next_extracted_id <= (others => '0'); --quindi qui ad esempio forzo i 6 bit disponibili a 0
 
             when OP01_READ_FIRST =>
                 o_mem_addr <= "0000000000000001";
@@ -302,6 +302,7 @@ begin
                 o_mem_addr <= std_logic_vector(current_addr);
                 
             when OP00_MODIFY =>
+                o_mem_addr <= std_logic_vector(current_addr);
             -- 1. Calcolo della nuova priorità (Saturazione a 3, ovvero "11")
         -- Prendo i bit 1 e 0 di i_mem_data (la priorità attuale)
                 if i_mem_data(1 downto 0) = "11" then
@@ -312,7 +313,6 @@ begin
                     o_mem_data <= i_mem_data(7 downto 2) & std_logic_vector(unsigned(i_mem_data(1 downto 0)) + 1);
                 end if;
                 
-                o_mem_addr <= std_logic_vector(current_addr);
                 next_extracted_id <= i_mem_data(7 downto 2);
                 next_current_addr <= current_addr + 1;            
 
