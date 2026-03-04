@@ -104,7 +104,7 @@ begin
         next_current_addr <= current_addr;
         next_target_addr  <= target_addr;
         next_extracted_id <= extracted_id;
-        next_mem_latch    <= i_mem_data; -- aggiorna latch ogni ciclo
+        next_mem_latch    <= mem_latch; -- aggiorna latch ogni ciclo
 
         o_done     <= '0';
         o_mem_en   <= '0';
@@ -139,11 +139,11 @@ begin
                 next_state <= S_WAIT_FETCH;
 
             when S_WAIT_FETCH =>
-                o_mem_en   <= '1';
-                o_mem_we   <= '0';
-                o_mem_addr <= (others => '0');
-                -- mem_latch si aggiorna via default (next_mem_latch <= i_mem_data)
-                next_state <= S_DECODE;
+                o_mem_en       <= '1';
+                o_mem_we       <= '0';
+                o_mem_addr     <= (others => '0');
+                next_mem_latch <= i_mem_data;  -- salvataggio esplicito
+                next_state     <= S_DECODE;
 
             when S_DECODE =>
                 -- mem_latch contiene ora il valore di addr=0
@@ -185,8 +185,11 @@ begin
                 end if;
 
             when S_OP00_WAIT =>
-                o_mem_addr <= std_logic_vector(current_addr);
-                next_state <= S_OP00_MODIFY;
+                o_mem_en       <= '1';
+                o_mem_we       <= '0';
+                o_mem_addr     <= std_logic_vector(current_addr);
+                next_mem_latch <= i_mem_data;
+                next_state     <= S_OP00_MODIFY;
 
             when S_OP00_MODIFY =>
                 o_mem_en   <= '1';
@@ -227,8 +230,11 @@ begin
                 next_state <= S_OP01_WAIT_FIRST;
 
             when S_OP01_WAIT_FIRST =>
-                o_mem_addr <= std_logic_vector(to_unsigned(1, 16));
-                next_state <= S_OP01_SAVE;
+                o_mem_en       <= '1';
+                o_mem_we       <= '0';
+                o_mem_addr     <= std_logic_vector(to_unsigned(1, 16));
+                next_mem_latch <= i_mem_data;
+                next_state     <= S_OP01_SAVE;
 
             when S_OP01_SAVE =>
                 next_extracted_id <= mem_latch(7 downto 2);
@@ -246,8 +252,11 @@ begin
                 next_state <= S_OP01_WAIT_SHIFT;
 
             when S_OP01_WAIT_SHIFT =>
-                o_mem_addr <= std_logic_vector(current_addr);
-                next_state <= S_OP01_SHIFT_WRITE;
+                o_mem_en       <= '1';
+                o_mem_we       <= '0';
+                o_mem_addr     <= std_logic_vector(current_addr);
+                next_mem_latch <= i_mem_data;
+                next_state     <= S_OP01_SHIFT_WRITE;
 
             when S_OP01_SHIFT_WRITE =>
                 o_mem_en   <= '1';
@@ -288,8 +297,11 @@ begin
                 next_state <= S_OP10_FIND_WAIT;
 
             when S_OP10_FIND_WAIT =>
-                o_mem_addr <= std_logic_vector(current_addr);
-                next_state <= S_OP10_FIND_EVAL;
+                o_mem_en       <= '1';
+                o_mem_we       <= '0';
+                o_mem_addr     <= std_logic_vector(current_addr);
+                next_mem_latch <= i_mem_data;
+                next_state     <= S_OP10_FIND_EVAL;
 
             when S_OP10_FIND_EVAL =>
                 if current_addr > resize(num_tasks, 16) then
@@ -318,8 +330,11 @@ begin
                 next_state <= S_OP10_SHIFT_WAIT;
 
             when S_OP10_SHIFT_WAIT =>
-                o_mem_addr <= std_logic_vector(current_addr);
-                next_state <= S_OP10_SHIFT_WRITE;
+                o_mem_en       <= '1';
+                o_mem_we       <= '0';
+                o_mem_addr     <= std_logic_vector(current_addr);
+                next_mem_latch <= i_mem_data;
+                next_state     <= S_OP10_SHIFT_WRITE;
 
             when S_OP10_SHIFT_WRITE =>
                 o_mem_en   <= '1';
