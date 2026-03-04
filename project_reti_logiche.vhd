@@ -341,7 +341,7 @@ begin
                 o_mem_we   <= '1';
                 o_mem_addr <= std_logic_vector(current_addr + 1);
                 o_mem_data <= mem_latch;
-                if current_addr >= target_addr then
+                if current_addr > target_addr then
                     next_current_addr <= current_addr - 1;
                     next_state        <= S_OP10_SHIFT_READ;
                 else
