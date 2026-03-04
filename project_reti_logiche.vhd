@@ -1,70 +1,78 @@
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL; -- Fondamentale per usare il tipo 'unsigned' e fare calcoli aritmetici
+use IEEE.NUMERIC_STD.ALL;
 
 entity project_reti_logiche is
     port (
-        -- Segnali di controllo globali
-        i_clk : in std_logic;
-        i_rst : in std_logic;      -- Reset asincrono: riporta il sistema a uno stato noto
-        i_start : in std_logic;    -- Avvia l'elaborazione del modulo
-        
-        -- Dati in ingresso dal Test Bench
-        i_task_id : in std_logic_vector(5 downto 0);      -- ID del task da gestire
-        i_task_priority : in std_logic_vector(1 downto 0); -- Priorità associata al task
-        i_op : in std_logic_vector(1 downto 0);           -- Codice operazione (00, 01, 10, 11)
-        
-        -- Segnali verso l'esterno
-        o_done : out std_logic;                           -- Segnala la fine dell'operazione
-        o_task_id : out std_logic_vector(5 downto 0);     -- Eventuale ID in uscita (per OP01)
-        
-        -- Interfaccia Memoria (Bus Dati e Indirizzi)
-        o_mem_addr: out std_logic_vector(15 downto 0);    -- Indirizzo di memoria (16 bit)
-        i_mem_data : in std_logic_vector(7 downto 0);     -- Dato letto dalla memoria
-        o_mem_data: out std_logic_vector(7 downto 0);     -- Dato da scrivere in memoria
-        o_mem_we : out std_logic;                         -- Write Enable (1=Scrittura, 0=Lettura)
-        o_mem_en : out std_logic                          -- Memory Enable (attiva la RAM)
+        i_clk           : in  std_logic;
+        i_rst           : in  std_logic;
+        i_start         : in  std_logic;
+        i_task_id       : in  std_logic_vector(5 downto 0);
+        i_task_priority : in  std_logic_vector(1 downto 0);
+        i_op            : in  std_logic_vector(1 downto 0);
+        o_done          : out std_logic;
+        o_task_id       : out std_logic_vector(5 downto 0);
+        o_mem_addr      : out std_logic_vector(15 downto 0);
+        i_mem_data      : in  std_logic_vector(7 downto 0);
+        o_mem_data      : out std_logic_vector(7 downto 0);
+        o_mem_we        : out std_logic;
+        o_mem_en        : out std_logic
     );
 end project_reti_logiche;
 
 architecture Behavioral of project_reti_logiche is
 
-    -- DICHIARAZIONE DEGLI STATI
-    type state_type is (RESET, INIT_MEM, IDLE, FETCH_SIZE, WAIT_FETCH, DECODE, 
-                        OP00_CHECK_EMPTY, OP00_READ, OP00_WAIT, OP00_MODIFY,
-                        OP01_CHECK_EMPTY, OP01_FORCE_ZERO, OP01_READ_FIRST, OP01_WAIT_FIRST, OP01_SAVE, OP01_SHIFT_READ, OP01_WAIT_SHIFT, OP01_SHIFT_WRITE, OP01_UPDATE,
-                        OP11_CLEAR,
-                        OP10_CHECK_EMPTY, OP10_FIND_READ,OP10_FIND_WAIT, OP10_FIND_EVAL, OP10_CHECK_SHIFT, OP10_SHIFT_READ, OP10_SHIFT_WAIT, OP10_SHIFT_WRITE, OP10_INSERT, OP10_UPDATE_SIZE,
-                        DONE);
-    
-    signal current_state, next_state: state_type;
+    type state_type is (
+        S_RESET, S_INIT_MEM, S_IDLE,
+        S_FETCH_SIZE, S_WAIT_FETCH, S_DECODE,
+        -- OP00
+        S_OP00_READ, S_OP00_WAIT, S_OP00_MODIFY,
+        -- OP01
+        S_OP01_CHECK_EMPTY, S_OP01_FORCE_ZERO,
+        S_OP01_READ_FIRST, S_OP01_WAIT_FIRST, S_OP01_SAVE,
+        S_OP01_SHIFT_READ, S_OP01_WAIT_SHIFT, S_OP01_SHIFT_WRITE,
+        S_OP01_UPDATE,
+        -- OP10
+        S_OP10_CHECK_EMPTY,
+        S_OP10_FIND_READ, S_OP10_FIND_WAIT, S_OP10_FIND_EVAL,
+        S_OP10_CHECK_SHIFT,
+        S_OP10_SHIFT_READ, S_OP10_SHIFT_WAIT, S_OP10_SHIFT_WRITE,
+        S_OP10_INSERT, S_OP10_UPDATE_SIZE,
+        -- OP11
+        S_OP11_CLEAR,
+        S_DONE
+    );
 
-    -- REGISTRI E SEGNALI "NEXT" (DATAPATH)
-    signal num_tasks,    next_num_tasks    : unsigned(7 downto 0);
-    signal current_addr, next_current_addr : unsigned(15 downto 0);
-    signal target_addr,  next_target_addr  : unsigned(15 downto 0);
-    signal extracted_id, next_extracted_id : std_logic_vector(5 downto 0);
-    signal data_buffer,  next_data_buffer  : std_logic_vector(7 downto 0);
-    
-    -- Filo combinatorio per unire ID e Priority in un unico byte da scrivere
-    signal concatenation : std_logic_vector(7 downto 0);
+    signal current_state : state_type;
+    signal next_state    : state_type;
+
+    -- Registri del datapath
+    signal num_tasks    : unsigned(7 downto 0);
+    signal current_addr : unsigned(15 downto 0);
+    signal target_addr  : unsigned(15 downto 0);
+    signal extracted_id : std_logic_vector(5 downto 0);
+    signal mem_latch    : std_logic_vector(7 downto 0);
+
+    -- Segnali "next" del datapath
+    signal next_num_tasks    : unsigned(7 downto 0);
+    signal next_current_addr : unsigned(15 downto 0);
+    signal next_target_addr  : unsigned(15 downto 0);
+    signal next_extracted_id : std_logic_vector(5 downto 0);
+    signal next_mem_latch    : std_logic_vector(7 downto 0);
 
 begin
 
-    -- ASSEGNAMENTO COMBINATORIO CONTINUO
-    concatenation <= i_task_id & i_task_priority;
-
-    -- 1. PROCESSO: REGISTRO DI STATO (SEQUENZIALE)
+    -- PROCESSO 1: Registro di stato
     state_reg: process(i_clk, i_rst)
     begin
         if i_rst = '1' then
-            current_state <= RESET;
+            current_state <= S_RESET;
         elsif rising_edge(i_clk) then
             current_state <= next_state;
         end if;
     end process;
 
-    -- 2. PROCESSO: REGISTRI DEL DATAPATH (SEQUENZIALE)
+    -- PROCESSO 2: Registri datapath
     datapath_regs: process(i_clk, i_rst)
     begin
         if i_rst = '1' then
@@ -72,361 +80,282 @@ begin
             current_addr <= (others => '0');
             target_addr  <= (others => '0');
             extracted_id <= (others => '0');
-            data_buffer  <= (others => '0');
+            mem_latch    <= (others => '0');
         elsif rising_edge(i_clk) then
             num_tasks    <= next_num_tasks;
             current_addr <= next_current_addr;
             target_addr  <= next_target_addr;
             extracted_id <= next_extracted_id;
-            data_buffer  <= next_data_buffer;
+            mem_latch    <= next_mem_latch;
         end if;
     end process;
 
-    -- 3. PROCESSO: LOGICA DELLA FSM (COMBINATORIO)
-    fsm_logic: process(current_state, i_start, i_op, num_tasks, i_mem_data, current_addr, target_addr, i_task_id, i_task_priority)
+    -- PROCESSO 3: UNICO processo combinatorio
+    -- Guida tutti i segnali "next" e tutte le uscite.
+    -- Un solo driver per ogni segnale => nessun errore multi-driven.
+    comb: process(current_state, i_start, i_op,
+                  i_task_id, i_task_priority,
+                  num_tasks, current_addr, target_addr,
+                  extracted_id, mem_latch, i_mem_data)
     begin
-        -- Valori di default per la FSM
-        next_state <= current_state;
-        
-        -- Valori di default per i registri del Datapath (FONDAMENTALE PER EVITARE LATCH!)
+        -- Default
+        next_state        <= current_state;
         next_num_tasks    <= num_tasks;
         next_current_addr <= current_addr;
         next_target_addr  <= target_addr;
         next_extracted_id <= extracted_id;
-        next_data_buffer  <= data_buffer;
+        next_mem_latch    <= i_mem_data; -- aggiorna latch ogni ciclo
 
-        -- Valori di default per le uscite di controllo
-        o_mem_en <= '0';
-        o_mem_we <= '0';
-        o_done   <= '0';
-        
-        
-        case current_state is
-            when RESET =>
-                o_done     <= '1';
-                next_state <= INIT_MEM;
-
-            when INIT_MEM =>
-                o_done     <= '1';
-                o_mem_en   <= '1';
-                o_mem_we   <= '1';
-                next_state <= IDLE;
-
-            when IDLE =>
-                o_done <= '0';
-                if i_start = '1' then
-                    next_state <= FETCH_SIZE;
-                end if;
-
-            when FETCH_SIZE =>
-                o_mem_en   <= '1';
-                next_state <= WAIT_FETCH; --serve per aspettare la lettura della ram
-                
-            when WAIT_FETCH =>
-                -- In questo ciclo la memoria prepara i_mem_data
-                next_state <= DECODE;
-
-            when DECODE =>
-                if    i_op = "00" then next_state <= OP00_CHECK_EMPTY;
-                elsif i_op = "01" then next_state <= OP01_CHECK_EMPTY;
-                elsif i_op = "10" then next_state <= OP10_CHECK_EMPTY;
-                elsif i_op = "11" then next_state <= OP11_CLEAR;
-                else                   next_state <= DONE;
-                end if;
-
--- OP11
-            when OP11_CLEAR =>
-                o_mem_en   <= '1';
-                o_mem_we   <= '1';
-                next_state <= DONE;
-
--- OP01
-            when OP01_CHECK_EMPTY =>
-                if num_tasks = "00000000" then
-                    next_state <= OP01_FORCE_ZERO;
-                else
-                    next_state <= OP01_READ_FIRST;
-                end if;
-            
-            when OP01_FORCE_ZERO =>
-                next_state <= DONE;
-
-            when OP01_READ_FIRST =>
-                o_mem_we   <= '0';
-                o_mem_en   <= '1';
-                next_state <= OP01_WAIT_FIRST;
-                
-            when OP01_WAIT_FIRST =>
-                next_state <= OP01_SAVE;
-                
-            when OP01_SAVE =>
-                if num_tasks = "00000001" then
-                    next_state <= OP01_UPDATE;
-                else
-                    next_state <= OP01_SHIFT_READ;
-                end if;
-
-            when OP01_SHIFT_READ =>
-                o_mem_we   <= '0';
-                o_mem_en   <= '1';
-                next_state <= OP01_WAIT_SHIFT;
-                
-            when OP01_WAIT_SHIFT =>
-                next_state <= OP01_SHIFT_WRITE;    
-
-            when OP01_SHIFT_WRITE =>
-                o_mem_we <= '1';
-                o_mem_en <= '1';
-                if current_addr < resize(num_tasks, 16) then
-                    next_state <= OP01_SHIFT_READ;
-                else
-                    next_state <= OP01_UPDATE;
-                end if;
-                
-            when OP01_UPDATE =>
-                o_mem_we   <= '1';
-                o_mem_en   <= '1';
-                next_state <= DONE;
-
--- OP00
-            when OP00_CHECK_EMPTY =>
-                if num_tasks = "00000000" then
-                    next_state <= DONE;
-                else
-                    next_state <= OP00_READ;
-                end if;
-                        
-            when OP00_READ =>
-                o_mem_we   <= '0';
-                o_mem_en   <= '1';
-                next_state <= OP00_WAIT;
-                
-            when OP00_WAIT =>
-                next_state <= OP00_MODIFY;
-
-            when OP00_MODIFY =>
-                o_mem_en <= '1';
-                o_mem_we <= '1';
-                if current_addr < resize(num_tasks, 16) then
-                    next_state <= OP00_READ;
-                else
-                    next_state <= DONE;
-                end if;
-
--- OP10
-            when OP10_CHECK_EMPTY =>
-                
-                if num_tasks = "00000000" then
-                    next_state <= OP10_INSERT;
-                else
-                    next_state <= OP10_FIND_READ;
-                end if;
-                
-            when OP10_FIND_READ =>
-                
-                o_mem_en   <= '1';
-                o_mem_we   <= '0';
-                next_state <= OP10_FIND_WAIT;
-                
-            when OP10_FIND_WAIT =>
-                next_state <= OP10_FIND_EVAL;
-            
-            when OP10_FIND_EVAL =>
-                -- 
-                if current_addr > resize(num_tasks, 16) then
-                    -- Scorsa tutta la lista senza trovare un task a priorità inferiore:
-                    -- il nuovo task va in coda (target_addr sarà num_tasks+1, calcolato nel dp)
-                    next_state <= OP10_CHECK_SHIFT;
-                elsif i_mem_data(1 downto 0) > i_task_priority then
-                    -- Trovato il primo task con priorità INFERIORE (valore numerico maggiore):
-                    -- il nuovo task va prima di questo
-                    next_state <= OP10_CHECK_SHIFT;
-                else
-                    -- Priorità uguale o superiore: continua a scorrere
-                    next_state <= OP10_FIND_READ;
-                end if;
-                
-            when OP10_CHECK_SHIFT =>
-                if target_addr > resize(num_tasks, 16) then
-                    next_state <= OP10_INSERT;
-                else
-                    
-                    next_state <= OP10_SHIFT_READ;
-                end if;
-            
-            when OP10_SHIFT_READ =>
-                o_mem_en   <= '1';
-                o_mem_we   <= '0';
-                next_state <= OP10_SHIFT_WAIT;
-                
-            when OP10_SHIFT_WAIT =>
-                next_state <= OP10_SHIFT_WRITE;
-            
-            when OP10_SHIFT_WRITE =>
-                o_mem_en <= '1';
-                o_mem_we <= '1';
-                if current_addr > target_addr then
-                    next_state <= OP10_SHIFT_READ;
-                else
-                    next_state <= OP10_INSERT;
-                end if;         
-                    
-            when OP10_INSERT =>
-                o_mem_en   <= '1';
-                o_mem_we   <= '1';
-                next_state <= OP10_UPDATE_SIZE;
-                
-            when OP10_UPDATE_SIZE =>
-                o_mem_en   <= '1';
-                o_mem_we   <= '1';
-                next_state <= DONE;        
-
-            when DONE =>
-                o_done <= '1';
-                if i_start = '0' then
-                    next_state <= IDLE;
-                end if;
-
-            when others =>
-                next_state <= RESET;
-        end case;
-    end process;
-
-    -- 4. PROCESSO: LOGICA DEL DATAPATH (COMBINATORIO)
-    datapath_logic: process(current_state, i_mem_data, num_tasks, current_addr, target_addr, extracted_id, data_buffer, concatenation, i_task_priority)
-    begin
-        next_num_tasks    <= num_tasks;
-        next_current_addr <= current_addr;
-        next_target_addr  <= target_addr;
-        next_extracted_id <= extracted_id;
-        next_data_buffer  <= data_buffer;
-        
+        o_done     <= '0';
+        o_mem_en   <= '0';
+        o_mem_we   <= '0';
         o_mem_addr <= (others => '0');
         o_mem_data <= (others => '0');
         o_task_id  <= extracted_id;
 
         case current_state is
-            when INIT_MEM =>
+
+            when S_RESET =>
+                o_done     <= '1';
+                next_state <= S_INIT_MEM;
+
+            when S_INIT_MEM =>
+                o_done     <= '1';
+                o_mem_en   <= '1';
+                o_mem_we   <= '1';
                 o_mem_addr <= (others => '0');
                 o_mem_data <= (others => '0');
+                next_state <= S_IDLE;
 
-            when FETCH_SIZE | WAIT_FETCH=>
+            when S_IDLE =>
+                if i_start = '1' then
+                    next_state <= S_FETCH_SIZE;
+                end if;
+
+            when S_FETCH_SIZE =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '0';
                 o_mem_addr <= (others => '0');
+                next_state <= S_WAIT_FETCH;
 
-            when DECODE =>
-                next_num_tasks <= unsigned(i_mem_data);
+            when S_WAIT_FETCH =>
+                -- mem_latch si aggiorna via default (next_mem_latch <= i_mem_data)
+                next_state <= S_DECODE;
 
--- OP11
-            when OP11_CLEAR =>
-                o_mem_addr     <= (others => '0');
-                o_mem_data     <= (others => '0');
-                next_num_tasks <= (others => '0');
-
--- OP00 / OP01: reset comune (senza target_addr, gestito separatamente per OP10)
-            when OP00_CHECK_EMPTY | OP01_CHECK_EMPTY =>
-                next_extracted_id <= (others => '0');
+            when S_DECODE =>
+                -- mem_latch contiene ora il valore di addr=0
+                next_num_tasks    <= unsigned(mem_latch);
+                next_current_addr <= to_unsigned(1, 16);
                 next_target_addr  <= (others => '0');
-                if num_tasks /= "00000000" then
-                    next_current_addr <= to_unsigned(1, 16);
-                end if;
-                
-                when OP10_CHECK_EMPTY =>
                 next_extracted_id <= (others => '0');
-                if num_tasks = "00000000" then
-                    -- Lista vuota: inserimento diretto in posizione 1
-                    next_target_addr  <= to_unsigned(1, 16);
+                if    i_op = "00" then next_state <= S_OP00_READ;
+                elsif i_op = "01" then next_state <= S_OP01_CHECK_EMPTY;
+                elsif i_op = "10" then next_state <= S_OP10_CHECK_EMPTY;
+                elsif i_op = "11" then next_state <= S_OP11_CLEAR;
+                else                   next_state <= S_DONE;
+                end if;
+
+            -- -----------------------------------------------
+            -- OP00: incrementa valore priorità (satura a 3)
+            -- -----------------------------------------------
+
+            when S_OP00_READ =>
+                if num_tasks = 0 then
+                    next_state <= S_DONE;
                 else
-                    -- Lista non vuota: reset target_addr, parto a scorrere da addr 1
-                    next_target_addr  <= (others => '0');
-                    next_current_addr <= to_unsigned(1, 16);
+                    o_mem_en   <= '1';
+                    o_mem_we   <= '0';
+                    o_mem_addr <= std_logic_vector(current_addr);
+                    next_state <= S_OP00_WAIT;
                 end if;
 
+            when S_OP00_WAIT =>
+                o_mem_addr <= std_logic_vector(current_addr);
+                next_state <= S_OP00_MODIFY;
 
--- OP01
-            when OP01_FORCE_ZERO =>
+            when S_OP00_MODIFY =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '1';
+                o_mem_addr <= std_logic_vector(current_addr);
+                if mem_latch(1 downto 0) = "11" then
+                    o_mem_data <= mem_latch(7 downto 2) & "11";
+                else
+                    o_mem_data <= mem_latch(7 downto 2) &
+                                  std_logic_vector(unsigned(mem_latch(1 downto 0)) + 1);
+                end if;
+                next_current_addr <= current_addr + 1;
+                if current_addr >= resize(num_tasks, 16) then
+                    next_state <= S_DONE;
+                else
+                    next_state <= S_OP00_READ;
+                end if;
+
+            -- -----------------------------------------------
+            -- OP01: rimuovi primo task
+            -- -----------------------------------------------
+
+            when S_OP01_CHECK_EMPTY =>
+                if num_tasks = 0 then
+                    next_state <= S_OP01_FORCE_ZERO;
+                else
+                    next_state <= S_OP01_READ_FIRST;
+                end if;
+
+            when S_OP01_FORCE_ZERO =>
                 next_extracted_id <= (others => '0');
+                next_state        <= S_DONE;
 
-            when OP01_READ_FIRST | OP01_WAIT_FIRST=>
-                o_mem_addr <= "0000000000000001";
+            when S_OP01_READ_FIRST =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '0';
+                o_mem_addr <= std_logic_vector(to_unsigned(1, 16));
+                next_state <= S_OP01_WAIT_FIRST;
 
-            when OP01_SAVE =>
-                next_extracted_id <= i_mem_data(7 downto 2);
+            when S_OP01_WAIT_FIRST =>
+                o_mem_addr <= std_logic_vector(to_unsigned(1, 16));
+                next_state <= S_OP01_SAVE;
+
+            when S_OP01_SAVE =>
+                next_extracted_id <= mem_latch(7 downto 2);
                 next_current_addr <= to_unsigned(2, 16);
+                if num_tasks = 1 then
+                    next_state <= S_OP01_UPDATE;
+                else
+                    next_state <= S_OP01_SHIFT_READ;
+                end if;
 
-            when OP01_SHIFT_READ | OP01_WAIT_SHIFT =>
+            when S_OP01_SHIFT_READ =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '0';
                 o_mem_addr <= std_logic_vector(current_addr);
-                
-            when OP01_SHIFT_WRITE =>
+                next_state <= S_OP01_WAIT_SHIFT;
+
+            when S_OP01_WAIT_SHIFT =>
+                o_mem_addr <= std_logic_vector(current_addr);
+                next_state <= S_OP01_SHIFT_WRITE;
+
+            when S_OP01_SHIFT_WRITE =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '1';
                 o_mem_addr <= std_logic_vector(current_addr - 1);
-                o_mem_data <= i_mem_data;
+                o_mem_data <= mem_latch;
                 next_current_addr <= current_addr + 1;
+                if current_addr >= resize(num_tasks, 16) then
+                    next_state <= S_OP01_UPDATE;
+                else
+                    next_state <= S_OP01_SHIFT_READ;
+                end if;
 
-            when OP01_UPDATE =>
-                o_mem_data <= std_logic_vector(num_tasks - 1);
-                o_mem_addr <= (others => '0');
+            when S_OP01_UPDATE =>
+                o_mem_en       <= '1';
+                o_mem_we       <= '1';
+                o_mem_addr     <= (others => '0');
+                o_mem_data     <= std_logic_vector(num_tasks - 1);
                 next_num_tasks <= num_tasks - 1;
+                next_state     <= S_DONE;
 
--- OP00
-            when OP00_READ | OP00_WAIT =>
-                o_mem_addr <= std_logic_vector(current_addr);
-                
-            when OP00_MODIFY =>
-                o_mem_addr <= std_logic_vector(current_addr);
-                if i_mem_data(1 downto 0) = "11" then
-                    o_mem_data <= i_mem_data(7 downto 2) & "11";
+            -- -----------------------------------------------
+            -- OP10: inserisci nuovo task
+            -- -----------------------------------------------
+
+            when S_OP10_CHECK_EMPTY =>
+                if num_tasks = 0 then
+                    next_target_addr <= to_unsigned(1, 16);
+                    next_state       <= S_OP10_INSERT;
                 else
-                    o_mem_data <= i_mem_data(7 downto 2) & std_logic_vector(unsigned(i_mem_data(1 downto 0)) + 1);
+                    next_state <= S_OP10_FIND_READ;
                 end if;
-                next_extracted_id <= i_mem_data(7 downto 2);
-                next_current_addr <= current_addr + 1;
 
--- OP10
-            
-
-            when OP10_FIND_READ | OP10_FIND_WAIT =>
-                
+            when S_OP10_FIND_READ =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '0';
                 o_mem_addr <= std_logic_vector(current_addr);
+                next_state <= S_OP10_FIND_WAIT;
 
-            when OP10_FIND_EVAL =>
-                
+            when S_OP10_FIND_WAIT =>
+                o_mem_addr <= std_logic_vector(current_addr);
+                next_state <= S_OP10_FIND_EVAL;
+
+            when S_OP10_FIND_EVAL =>
                 if current_addr > resize(num_tasks, 16) then
-                    -- Fine lista: inserimento in coda (pos = num_tasks + 1)
                     next_target_addr <= resize(num_tasks, 16) + 1;
-                elsif i_mem_data(1 downto 0) > i_task_priority then
-                    -- Trovato il punto di inserimento
-                    next_target_addr  <= current_addr;
+                    next_state       <= S_OP10_CHECK_SHIFT;
+                elsif mem_latch(1 downto 0) > i_task_priority then
+                    next_target_addr <= current_addr;
+                    next_state       <= S_OP10_CHECK_SHIFT;
                 else
-                    -- Continua la scansione
                     next_current_addr <= current_addr + 1;
+                    next_state        <= S_OP10_FIND_READ;
                 end if;
-            
-            when OP10_CHECK_SHIFT =>
-                -- Prepara current_addr per lo shift dall'ultimo elemento verso target
-                if target_addr <= resize(num_tasks, 16) then
+
+            when S_OP10_CHECK_SHIFT =>
+                if target_addr > resize(num_tasks, 16) then
+                    next_state <= S_OP10_INSERT;
+                else
                     next_current_addr <= resize(num_tasks, 16);
+                    next_state        <= S_OP10_SHIFT_READ;
                 end if;
-                
-            when OP10_SHIFT_READ | OP10_SHIFT_WAIT=>
+
+            when S_OP10_SHIFT_READ =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '0';
                 o_mem_addr <= std_logic_vector(current_addr);
-            
-            when OP10_SHIFT_WRITE =>
+                next_state <= S_OP10_SHIFT_WAIT;
+
+            when S_OP10_SHIFT_WAIT =>
+                o_mem_addr <= std_logic_vector(current_addr);
+                next_state <= S_OP10_SHIFT_WRITE;
+
+            when S_OP10_SHIFT_WRITE =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '1';
                 o_mem_addr <= std_logic_vector(current_addr + 1);
-                o_mem_data <= i_mem_data;
+                o_mem_data <= mem_latch;
                 if current_addr > target_addr then
                     next_current_addr <= current_addr - 1;
+                    next_state        <= S_OP10_SHIFT_READ;
+                else
+                    next_state <= S_OP10_INSERT;
                 end if;
-                
-            when OP10_INSERT =>
+
+            when S_OP10_INSERT =>
+                o_mem_en   <= '1';
+                o_mem_we   <= '1';
                 o_mem_addr <= std_logic_vector(target_addr);
-                o_mem_data <= concatenation;
-            
-            when OP10_UPDATE_SIZE =>
+                o_mem_data <= i_task_id & i_task_priority;
+                next_state <= S_OP10_UPDATE_SIZE;
+
+            when S_OP10_UPDATE_SIZE =>
+                o_mem_en       <= '1';
+                o_mem_we       <= '1';
                 o_mem_addr     <= (others => '0');
                 o_mem_data     <= std_logic_vector(num_tasks + 1);
                 next_num_tasks <= num_tasks + 1;
+                next_state     <= S_DONE;
+
+            -- -----------------------------------------------
+            -- OP11: svuota lista
+            -- -----------------------------------------------
+
+            when S_OP11_CLEAR =>
+                o_mem_en       <= '1';
+                o_mem_we       <= '1';
+                o_mem_addr     <= (others => '0');
+                o_mem_data     <= (others => '0');
+                next_num_tasks <= (others => '0');
+                next_state     <= S_DONE;
+
+            -- -----------------------------------------------
+            when S_DONE =>
+                o_done    <= '1';
+                o_task_id <= extracted_id;
+                if i_start = '0' then
+                    next_state <= S_IDLE;
+                end if;
 
             when others =>
-                null;
+                next_state <= S_RESET;
+
         end case;
     end process;
 
