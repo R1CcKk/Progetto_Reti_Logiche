@@ -148,7 +148,7 @@ begin
                 next_current_addr <= to_unsigned(1, 16);
                 next_target_addr  <= (others => '0');
                 next_extracted_id <= (others => '0');
-                if    i_op = "00" then next_state <= S_OP00_READ;
+                if    i_op = "00" then next_state <= S_OP00_CHECK_EMPTY;
                 elsif i_op = "01" then next_state <= S_OP01_CHECK_EMPTY;
                 elsif i_op = "10" then next_state <= S_OP10_CHECK_EMPTY;
                 elsif i_op = "11" then next_state <= S_OP11_CLEAR;
@@ -158,7 +158,19 @@ begin
             -- -----------------------------------------------
             -- OP00: incrementa valore priorità (satura a 3)
             -- -----------------------------------------------
+            when OP00_CHECK_EMPTY =>
 
+                next_extracted_id <= (others => '0');
+                next_target_addr  <= (others => '0');
+
+                if num_tasks = "00000000" then
+                    next_current_addr <= to_unsigned(1, 16);
+                    next_state <= DONE;
+                else
+                    next_state <= OP00_READ;
+                end if;
+
+                    
             when S_OP00_READ =>
                 if num_tasks = 0 then
                     next_state <= S_DONE;
