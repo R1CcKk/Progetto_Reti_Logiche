@@ -93,7 +93,7 @@ begin
 
         case current_state is
             when RESET =>
-                o_done     <= '1';
+                o_done     <= '0';
                 next_state <= INIT_MEM;
 
             when INIT_MEM =>
