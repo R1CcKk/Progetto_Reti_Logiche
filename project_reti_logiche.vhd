@@ -208,13 +208,8 @@ begin
                 next_state <= OP00_MODIFY;
 
             when OP00_MODIFY =>
-                if i_mem_data(7 downto 2) = i_task_id then
-                    o_mem_en <= '1';
-                    o_mem_we <= '1';
-                else
-                    o_mem_en <= '0';
-                    o_mem_we <= '0';
-                end if;
+                o_mem_en <= '1';
+                o_mem_we <= '1';
                 
                 if current_addr < resize(num_tasks, 16) then
                     next_state <= OP00_READ;
