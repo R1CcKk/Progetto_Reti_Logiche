@@ -93,7 +93,7 @@ begin
 
         case current_state is
             when RESET =>
-                o_done     <= '0';
+                o_done     <= '1';
                 next_state <= INIT_MEM;
 
             when INIT_MEM =>
@@ -103,6 +103,7 @@ begin
                 next_state <= IDLE;
 
             when IDLE =>
+                o_done <= '0';
                 if i_start = '1' then
                     next_state <= FETCH_SIZE;
                 end if;
@@ -183,7 +184,7 @@ begin
             when OP00_MODIFY =>
                 o_mem_en <= '1';
                 o_mem_we <= '1';
-                if current_addr <= resize(num_tasks, 16) then
+                if current_addr < resize(num_tasks, 16) then
                     next_state <= OP00_READ;
                 else
                     next_state <= DONE;
