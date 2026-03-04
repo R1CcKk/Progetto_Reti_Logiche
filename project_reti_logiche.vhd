@@ -292,12 +292,22 @@ begin
                 o_mem_data     <= (others => '0');
                 next_num_tasks <= (others => '0');
 
--- OP00 / OP01 / OP10 CHECK_EMPTY: reset comune
-            when OP00_CHECK_EMPTY | OP01_CHECK_EMPTY | OP10_CHECK_EMPTY =>
+-- OP00 / OP01: reset comune (senza target_addr, gestito separatamente per OP10)
+            when OP00_CHECK_EMPTY | OP01_CHECK_EMPTY =>
                 next_extracted_id <= (others => '0');
-                
                 next_target_addr  <= (others => '0');
                 if num_tasks /= "00000000" then
+                    next_current_addr <= to_unsigned(1, 16);
+                end if;
+                
+                when OP10_CHECK_EMPTY =>
+                next_extracted_id <= (others => '0');
+                if num_tasks = "00000000" then
+                    -- Lista vuota: inserimento diretto in posizione 1
+                    next_target_addr  <= to_unsigned(1, 16);
+                else
+                    -- Lista non vuota: reset target_addr, parto a scorrere da addr 1
+                    next_target_addr  <= (others => '0');
                     next_current_addr <= to_unsigned(1, 16);
                 end if;
 
@@ -341,11 +351,7 @@ begin
                 next_current_addr <= current_addr + 1;
 
 -- OP10
-            when OP10_CHECK_EMPTY =>
-                -- Se lista vuota, imposta subito target_addr=1 (inserimento in pos 1)
-                if num_tasks = "00000000" then
-                    next_target_addr <= to_unsigned(1, 16);
-                end if;
+            
 
             when OP10_FIND_READ =>
                 
