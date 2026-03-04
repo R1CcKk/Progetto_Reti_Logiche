@@ -142,11 +142,13 @@ begin
                     next_state <= DONE;
                 end if;
 
+--OP11
             when OP11_CLEAR =>
                 o_mem_en <= '1';
                 o_mem_we <= '1'; -- Scrittura forzata di 0 per svuotare la lista
                 next_state <= DONE;
 
+--OP01
             when OP01_CHECK_EMPTY =>
                 if num_tasks = 00000000 then
                     next_state <= OP01_FORCE_ZERO;
@@ -187,7 +189,6 @@ begin
                     next_state <= OP01_UPDATE;
                 end if;
                 
-
             when OP01_UPDATE =>
                 o_mem_we <= '1';
                 o_mem_en <= '1';
@@ -201,6 +202,8 @@ begin
                         next_state <= OP00_READ;
                     end if;
 
+--OP00
+                        
             when OP00_READ =>
                 o_mem_we <= '0';
                 o_mem_en <= '1';
@@ -217,7 +220,51 @@ begin
                     next_state <= DONE;
                 end if;
 
-        
+-- OP10
+            when OP10_CHECK_EMPTY =>
+                if  num_tasks = "00000000" and target_addr = "0000000000000001" then
+                    next_state <= OP10_INSERT;
+                else
+                    next_state <= OP10_FIND_READ;
+                end if;
+                
+            when OP10_FIND_READ =>
+                next_state <= OP10_FIND_EVAL;
+            
+            when OP10_FIND_EVAL =>
+                if i_mem_data(1 downto 0) <= i_task_priority and current_addr <= resize(num_tasks,16) then
+                    next_state <= OP10_FIND_READ;
+                else
+                    next_state <= OP10_CHECK_SHIFT;
+                end if;
+                
+            when OP10_CHECK_SHIFT =>
+                
+                if target_addr > resize(num_tasks,16) then
+                    next_state <= OP10_INSERT;
+                else
+                    next_state <= OP01_SHIFT_READ;
+                end if;
+            
+            when OP10_SHIFT_READ =>
+                next_state <= OP10_SHIFT_WRITE;
+            
+            when OP10_SHIFT_WRITE =>
+                if current_addr >= target_addr then
+                    next_state <= OP10_SHIFT_READ;
+                else
+                    next_state <= OP10_INSERT;
+                    
+                end if;         
+                    
+            when OP10_INSERT =>
+                next_state <= OP10_UPDATE_SIZE;
+                
+            when OP10_UPDATE_SIZE =>
+                next_state <= DONE;        
+
+
+                    
             when DONE =>
                 o_done <= '1';
                 -- Protocollo Handshake: il modulo resta in DONE finché i_start è 1.
@@ -260,11 +307,13 @@ begin
                 -- Riceve il dato letto dalla memoria (numero task) e lo salva nel registro
                 next_num_tasks <= unsigned(i_mem_data);
 
+--OP11
             when OP11_CLEAR =>
                 o_mem_addr <= (others => '0');
                 o_mem_data <= (others => '0');
                 next_num_tasks <= (others => '0'); -- Azzera anche il registro     
-            
+
+--OP01
             when OP01_FORCE_ZERO =>
             --tip: per non scrivere ogni volta 000000 uso sintassi others => '0' 
             --è come dire al compilatore "riempi con tanti zeri quanti sono i bit disponibili"
@@ -276,7 +325,6 @@ begin
             when OP01_SAVE =>
                 next_extracted_id <= i_mem_data (7 downto 2); --id rimosso
                 next_current_addr <= to_unsigned(2, 16);    -- Parto a leggere dal SECONDO
-
 
             when OP01_SHIFT_READ =>
                 o_mem_addr <= std_logic_vector(current_addr);   --fortemente tipizzato quindi faccio cast per assegnamento
@@ -290,7 +338,8 @@ begin
                 o_mem_data <= std_logic_vector(num_tasks - 1);
                 o_mem_addr <= (others => '0');
                 next_num_tasks <= num_tasks - 1;
-            
+
+--OP00
             when OP00_CHECK_EMPTY | OP01_CHECK_EMPTY | OP10_CHECK_EMPTY =>
             next_extracted_id <= (others => '0'); --per svuotare i vecchi id
             
@@ -315,6 +364,49 @@ begin
                 
                 next_extracted_id <= i_mem_data(7 downto 2);
                 next_current_addr <= current_addr + 1;            
+
+--OP10            
+            when OP10_FIND_EVAL =>
+                if i_mem_data(1 downto 0) <= i_task_priority and current_addr <= resize(num_tasks,16) then
+                    next_current_addr <= current_addr + 1;
+                else
+                    next_target_addr <= current_addr;
+                end if;
+            
+            when OP10_CHECK_SHIFT =>
+                if target_addr <= resize(num_tasks,16) then
+                    next_current_addr <= num_tasks;
+                end if;
+                
+            when OP10_SHIFT_READ =>
+                o_mem_addr <= std_logic_vector(current_addr);
+                o_mem_we <= '0';
+                o_mem_en <= '1';
+            
+            when OP10_SHIFT_WRITE =>
+                o_mem_addr <= std_logic_vector(current_addr + 1);
+                o_mem_data <= i_mem_data;
+                o_mem_en   <= '1';
+                o_mem_we   <= '1';
+                if current_addr >= target_addr then
+                    next_current_addr <= current_addr - 1;
+                end if;
+                
+            when OP10_INSERT =>
+                o_mem_addr <= std_logic_vector(target_addr);
+                o_mem_en <= '1';
+                o_mem_we <= '1';
+                o_mem_data <= concatenation;
+            
+            when OP10_UPDATE_SIZE =>
+                o_mem_addr <= (others => '0');
+                o_mem_data <= std_logic_vector(num_tasks + 1);
+                o_mem_we   <= '1';
+                o_mem_en   <= '1'; 
+                
+                next_num_tasks <= num_tasks + 1; 
+
+
 
             when others =>
                 -- In tutti gli altri stati (es. DONE o IDLE), il datapath non deve agire.
