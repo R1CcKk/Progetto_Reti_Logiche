@@ -1,6 +1,7 @@
 -- TESTBENCH CASO LIMITE 2: OP=00 su lista vuota
 -- RAM[0]=0 dopo reset. OP=00 non deve modificare nulla:
 -- RAM[0] resta 0, RAM[1] resta 0 (nessun task da aggiornare).
+-- Step 1 e' un'ulteriore OP=00 di conferma (stato invariato).
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -32,23 +33,23 @@ architecture project_tb_arch of project_tb is
         op : std_logic_vector(1 downto 0);
     end record scenario_config_type_t;
 
-    constant SCENARIO_SIZE : integer := 1;
+    constant SCENARIO_SIZE : integer := 2;
     type scenario_config_type is array (0 to SCENARIO_SIZE-1) of scenario_config_type_t;
 
-    -- Step 0: OP=00 su lista vuota -> RAM[0] e RAM[1] restano 0
     signal scenario_config : scenario_config_type := (
-        (task_id => "000000", task_priority => "00", op => "00")  -- Post memory: [00000000, 00000000]
+        (task_id => "000000", task_priority => "00", op => "00"), -- Post memory: [00000000,00000000]
+        (task_id => "000000", task_priority => "00", op => "00")  -- Post memory: [00000000,00000000]
     );
 
     type scenario_single_result_type is array (0 to 32) of std_logic_vector(7 downto 0);
     type scenario_result_type is array (0 to 100) of scenario_single_result_type;
     type int_array_t is array (0 to SCENARIO_SIZE - 1) of integer;
     constant CHECK_SIZE_ARRAY : int_array_t := (
-        2
+        2, 2
     );
 
-    -- RAM[0]=0 (count invariato), RAM[1]=0 (nessun task scritto/modificato)
     signal scenario_result : scenario_result_type := (
+        ( "00000000", "00000000", others => "00000000"),
         ( "00000000", "00000000", others => "00000000"),
         others => (others => "00000000")
     );
