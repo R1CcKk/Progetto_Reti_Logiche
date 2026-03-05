@@ -1,5 +1,5 @@
 -- ============================================================
--- TESTBENCH CASO LIMITE 11 (BONUS): Doppio reset consecutivo
+-- TESTBENCH CASO LIMITE 11: Doppio reset consecutivo
 -- Descrizione: Due reset consecutivi senza operazioni intermedie.
 --   Dopo ogni reset il modulo deve scrivere 0 in RAM[0], portare
 --   DONE=1 durante l'init, poi DONE=0.
