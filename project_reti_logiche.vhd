@@ -45,7 +45,7 @@ architecture Behavioral of project_reti_logiche is
     type state_type is (
         S_RESET,        -- post-reset: scrive 0 in addr 0, DONE=1
         S_IDLE,         -- attende i_start='1'
-        S_FETCH_SIZE,   -- ciclo T: emette richiesta lettura addr 0
+        S_LOAD_COUNT,   -- ciclo T: emette richiesta lettura addr 0
         S_DECODE,       -- ciclo T+1: legge num_tasks da i_mem_data, decide operazione
         -- OP00: incrementa valore numerico di priorità (satura a 3 = priorità minima)
         S_OP00_READ,    -- ciclo T: richiesta lettura task corrente
@@ -58,7 +58,7 @@ architecture Behavioral of project_reti_logiche is
         S_OP01_UPDATE,      -- decrementa num_tasks in addr 0
         -- OP10: inserisci nuovo task mantenendo ordinamento per priorità
         S_OP10_FIND_READ,   -- legge task a current_addr per confronto priorità
-        S_OP10_FIND_EVAL,   -- decide: inserisci qui, in coda, o avanza
+        S_OP10_COMPARE,   -- decide: inserisci qui, in coda, o avanza
         S_OP10_SHIFT_READ,  -- legge addr[i] per spostarlo in addr[i+1] (shift destra)
         S_OP10_SHIFT_WRITE, -- scrive i_mem_data in addr[i+1], decrementa
         S_OP10_INSERT,      -- scrive il nuovo task in target_addr
@@ -105,7 +105,7 @@ architecture Behavioral of project_reti_logiche is
     -- 16 bit perché deve essere compatibile con o_mem_addr (16 bit).
     signal current_addr : unsigned(15 downto 0);
 
-    -- Posizione di inserimento calcolata da OP10 in S_OP10_FIND_EVAL.
+    -- Posizione di inserimento calcolata da OP10 in S_OP10_COMPARE.
     -- Salvata in un registro separato perché current_addr viene modificato
     -- durante lo shift e non può essere usato per ricordare la destinazione.
     signal target_addr  : unsigned(15 downto 0);
@@ -229,7 +229,7 @@ begin
                 -- Aspettiamo i_start='1' prima di leggere addr 0,
                 -- così siamo certi che anche i_op sia già valido.
                 if i_start = '1' then
-                    next_state <= S_FETCH_SIZE;
+                    next_state <= S_LOAD_COUNT;
                 end if;
                 -- Se i_start='0': next_state rimane S_IDLE (per il default)
 
@@ -238,7 +238,7 @@ begin
             -- Ciclo T: emette richiesta.
             -- Ciclo T+1 (S_DECODE): i_mem_data è stabile.
             -- =======================================================
-            when S_FETCH_SIZE =>
+            when S_LOAD_COUNT =>
                 o_mem_en   <= '1';
                 o_mem_we   <= '0';
                 o_mem_addr <= (others => '0');
@@ -402,9 +402,9 @@ begin
                 o_mem_en   <= '1';
                 o_mem_we   <= '0';
                 o_mem_addr <= std_logic_vector(current_addr);
-                next_state <= S_OP10_FIND_EVAL;
+                next_state <= S_OP10_COMPARE;
 
-            when S_OP10_FIND_EVAL =>
+            when S_OP10_COMPARE =>
                 -- Ciclo T+1: i_mem_data(1:0) = priorità del task a current_addr
                 -- PERCHÉ ">=" invece di "=" per il controllo sull'ultimo task:
                 -- difensivo contro qualsiasi caso in cui current_addr
