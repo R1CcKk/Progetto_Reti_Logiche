@@ -234,7 +234,7 @@ begin
                 -- Se i_start='0': next_state rimane S_IDLE (per il default)
 
             -- =======================================================
-            -- FETCH: legge addr 0 (num_tasks).
+            -- LOAD_COUNT: legge addr 0 (num_tasks).
             -- Ciclo T: emette richiesta.
             -- Ciclo T+1 (S_DECODE): i_mem_data è stabile.
             -- =======================================================
