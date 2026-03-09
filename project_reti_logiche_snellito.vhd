@@ -31,13 +31,13 @@ architecture Behavioral of project_reti_logiche is
         S_RESET,        -- post-reset: scrive 0 in addr 0, DONE=1
         S_IDLE,         -- attende i_start='1'
         S_LOAD_COUNT,   -- ciclo T: emette richiesta lettura addr 0
-        S_DECODE,       -- ciclo T+1: legge num_tasks da i_mem_data, decide operazione
+        S_DECODE,       -- ciclo T+1: legge num_tasks da i_mem_data, decide l'operazione
 
         -- OP00: incrementa valore numerico di priorità (satura a 3 = priorità minima)
-        S_OP00_READ,    -- ciclo T: richiesta lettura task corrente
+        S_OP00_READ,    -- ciclo T: richiesta lettura del task corrente
         S_OP00_MODIFY,  -- ciclo T+1: legge e riscrive con priorità incrementata
 
-        -- OP01: rimuove il primo task (addr 1), shifta la lista, decrementa contatore
+        -- OP01: rimuove il primo task (addr 1), shifta la lista, decrementa il contatore
         S_OP01_READ_FIRST,  -- legge addr 1 (il task da estrarre)
         S_OP01_SAVE,        -- salva ID estratto, prepara lo shift
         S_OP01_SHIFT_READ,  -- legge addr[i] per copiarlo in addr[i-1]
@@ -184,8 +184,8 @@ begin
                   num_tasks, current_addr, target_addr,
                   extracted_id, i_mem_data)
     begin
-        -- Default: mantieni stato e registri, uscite inattive
-        next_state        <= current_state;  -- se non modificato: rimani nello stato attuale
+        -- Default: mantiend stato e registri, uscite inattive
+        next_state        <= current_state;  -- se non modificato: rimane nello stato attuale
         next_num_tasks    <= num_tasks;
         next_current_addr <= current_addr;
         next_target_addr  <= target_addr;
@@ -237,13 +237,13 @@ begin
 
             when S_DECODE =>
                 -- Salva num_tasks nel registro interno per gli stati successivi.
-                -- Usiamo i_mem_data (non num_tasks) per i confronti qui sotto,
+                -- Usa i_mem_data (non num_tasks) per i confronti qui sotto,
                 -- perché num_tasks verrà aggiornato solo al prossimo fronte di clock.
 
                 next_num_tasks    <= unsigned(i_mem_data); -- o_mem_addr è a 0, quindi i_mem_data rappresenta il numero di task
                 next_current_addr <= to_unsigned(1, 16); -- la scansione parte sempre da addr 1
                 next_target_addr  <= (others => '0');
-                -- Reset a 0: se la lista è vuota e andiamo in S_DONE direttamente,
+                -- Reset a 0: se la lista è vuota e va in S_DONE direttamente,
                 -- extracted_id sarà già 0 (valore corretto per lista vuota in OP01).
                 next_extracted_id <= (others => '0');
 
@@ -321,6 +321,7 @@ begin
             -- =======================================================
             -- OP01: rimuove il primo task, shifta la lista, decrementa il count.
             -- =======================================================
+                    
             when S_OP01_READ_FIRST =>
                 o_mem_en   <= '1';
                 o_mem_we   <= '0';
