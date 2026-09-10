@@ -1,0 +1,20 @@
+# Unused / draft files
+tb2526New.vhd
+project_reti_logiche_snellito.vhd
+
+# Xilinx / Vivado generated files and logs
+*.log
+*.jou
+*.str
+*.wdb
+*.pb
+*.vcd
+.Xil/
+xsim.dir/
+
+# Editor / OS files
+.vscode/
+*.tmp
+*~
+Thumbs.db
+.DS_Store
